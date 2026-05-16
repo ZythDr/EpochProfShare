@@ -1,47 +1,76 @@
+-------------------------------------------------------------------------------
+-- EpochProfShare – Scanner.lua
+-- Scans the currently open trade-skill window and returns a structured table.
+--
+-- Uses only 3.3.5-compatible APIs:
+--   GetTradeSkillLine()        → profName, type, rank, modRank, maxRank
+--   GetNumTradeSkills()        → number of visible entries
+--   GetTradeSkillInfo(index)   → name, type ("header"|other), …
+--   GetTradeSkillRecipeLink(i) → hyperlink string  (|Henchant:ID|h…)
+-------------------------------------------------------------------------------
+
 local _, EPS = ...
+
+-- ---------------------------------------------------------------------------
+-- Internal: extract spell ID from a recipe link returned by the trade skill API
+-- Recipe links in 3.3.5 look like:
+--   |cff…|Henchant:12345|h[Enchant Boots - …]|h|r
+-- Some professions (Inscription, etc.) may use:
+--   |cff…|Hspell:12345|h[…]|h|r
+-- ---------------------------------------------------------------------------
+local function SpellIDFromLink(link)
+    if not link then return nil end
+    local id = link:match("|Henchant:(%d+)|h")
+    if id then return tonumber(id) end
+    id = link:match("|Hspell:(%d+)|h")
+    if id then return tonumber(id) end
+    return nil
+end
+
+-- ---------------------------------------------------------------------------
+-- EPS.Scanner
+-- ---------------------------------------------------------------------------
 EPS.Scanner = {}
 
-local f = CreateFrame("Frame")
-f:RegisterEvent("TRADE_SKILL_SHOW")
-f:RegisterEvent("TRADE_SKILL_UPDATE")
-
-function EPS.Scanner.ScanCurrent()
-    local tradeName, currentLevel, maxLevel = GetTradeSkillLine()
-    if not tradeName or tradeName == "UNKNOWN" then return end
-    
+---Scan the currently open profession window.
+---Returns { profName, rank, maxRank, spellIDs } or nil.
+function EPS.Scanner.ScanCurrentProfession()
     local numSkills = GetNumTradeSkills()
-    if numSkills == 0 then return end
-    
-    local recipes = {}
+    if not numSkills or numSkills == 0 then return nil end
+
+    local profName, _, rank, _, maxRank = GetTradeSkillLine()
+    if not profName or profName == "UNKNOWN" then return nil end
+
+    local spellIDs = {}
     for i = 1, numSkills do
-        local name, type, numAvailable, isExpanded, altVerb, numSkillUps = GetTradeSkillInfo(i)
-        if type ~= "header" then
-            local link = GetTradeSkillRecipeLink(i)
-            if link then
-                local spellID = link:match("enchant:(%d+)")
-                if spellID then
-                    table.insert(recipes, tonumber(spellID))
-                end
+        local skillName, skillType = GetTradeSkillInfo(i)
+        -- "header" entries are category separators, not recipes
+        if skillName and skillType ~= "header" then
+            local id = SpellIDFromLink(GetTradeSkillRecipeLink(i))
+            if id and id > 0 then
+                spellIDs[#spellIDs + 1] = id
             end
         end
     end
-    
-    if #recipes > 0 then
-        if not EpochProfShareDB.MyProfessions then EpochProfShareDB.MyProfessions = {} end
-        -- Use a robust hash (count of recipes for simplicity, combined with last recipe ID)
-        table.sort(recipes)
-        local hash = tostring(#recipes) .. "-" .. tostring(recipes[#recipes])
-        EpochProfShareDB.MyProfessions[tradeName] = {
-            level = currentLevel,
-            maxLevel = maxLevel,
-            recipes = recipes,
-            hash = hash
-        }
-    end
+
+    if #spellIDs == 0 then return nil end
+
+    table.sort(spellIDs)
+
+    return {
+        profName = profName,
+        rank     = rank    or 0,
+        maxRank  = maxRank or 0,
+        spellIDs = spellIDs,
+    }
 end
 
-f:SetScript("OnEvent", function(self, event)
-    if event == "TRADE_SKILL_SHOW" or event == "TRADE_SKILL_UPDATE" then
-        EPS.Scanner.ScanCurrent()
+---Build a short djb2-style hash of a sorted spell ID list, returned as base36.
+function EPS.Scanner.BuildHash(spellIDTable)
+    if not spellIDTable or #spellIDTable == 0 then return "0" end
+    local h = 5381
+    for _, id in ipairs(spellIDTable) do
+        h = ((h * 33) + id) % 2147483647
     end
-end)
+    return EPS.Encode.ToBase36(h)
+end

@@ -1,11 +1,12 @@
 ## Interface: 30300
 ## Title: EpochProfShare
-## Notes: Shares real profession links bypassing Epoch's broken native links.
-## Author: Antigravity
+## Notes: Invisible profession-sharing layer for Project Epoch. Lets addon users browse each other's real recipe lists.
+## Author: EpochProfShare Contributors
 ## Version: 0.0.1
-## SavedVariables: EpochProfShareDB
+## SavedVariables: EPS_SavedVars
 
-Encoder.lua
+Encode.lua
+Cache.lua
 Scanner.lua
 Comm.lua
 UI.lua
