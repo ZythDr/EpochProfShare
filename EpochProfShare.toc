@@ -2,7 +2,7 @@
 ## Title: EpochProfShare
 ## Notes: Shares real profession links bypassing Epoch's broken native links.
 ## Author: Antigravity
-## Version: 1.0.0
+## Version: 0.0.1
 ## SavedVariables: EpochProfShareDB
 
 Encoder.lua
