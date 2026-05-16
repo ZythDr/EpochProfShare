@@ -1,0 +1,12 @@
+## Interface: 30300
+## Title: EpochProfShare
+## Notes: Shares real profession links bypassing Epoch's broken native links.
+## Author: Antigravity
+## Version: 1.0.0
+## SavedVariables: EpochProfShareDB
+
+Encoder.lua
+Scanner.lua
+Comm.lua
+UI.lua
+EpochProfShare.lua
