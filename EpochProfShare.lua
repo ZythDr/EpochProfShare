@@ -82,13 +82,19 @@ SetItemRef = function(link, text, button, chatFrame)
             end
         end
 
-        -- Fallback: the link string itself IS the cache key (stored when we saw
-        -- it in a CHAT_MSG_* event).  Don't reconstruct |H...|h; just use `link`.
+        -- Fallback: the link string itself IS the cache key
         if not sender then
             sender = EPS.Cache.GetLinkSender(link)
             if sender then
                 EPS.Debug("Cache fallback: sender=" .. sender)
             end
+        end
+
+        -- Own trade link: skip all addon logic completely, let native handle it
+        local myName = UnitName("player")
+        if sender and myName and sender:lower() == myName:lower() then
+            EPS.Debug("Own trade link – skipping addon logic")
+            return _OrigSetItemRef(link, text, button, chatFrame)
         end
 
         if sender and sender ~= "" then
