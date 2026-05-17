@@ -32,6 +32,9 @@
 
 local _, EPS = ...
 
+-- Must be initialised before any `function EPS.Comm.X()` definitions below
+EPS.Comm = EPS.Comm or {}
+
 local PREFIX          = "EpsProfShare"
 local MAX_CHUNK_PAYLOAD = 200           -- bytes of encoded payload per chunk
 local REQUEST_TIMEOUT   = 30            -- seconds to wait for a complete transfer
