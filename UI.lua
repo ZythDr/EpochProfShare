@@ -193,8 +193,18 @@ end
 -- open.  data = { spellIDs={…}, rank=n, maxRank=n }
 -- ---------------------------------------------------------------------------
 function EPS.UI.Inject(sender, profName, data)
-    if not data or not data.spellIDs or #data.spellIDs == 0 then return end
-    if not TradeSkillFrame or not TradeSkillFrame:IsShown() then return end
+    if not data or not data.spellIDs or #data.spellIDs == 0 then
+        EPS.Debug("Inject: no data, skipping")
+        return
+    end
+    if not TradeSkillFrame then
+        EPS.Debug("Inject: TradeSkillFrame does not exist")
+        return
+    end
+    if not TradeSkillFrame:IsShown() then
+        EPS.Debug("Inject: TradeSkillFrame not shown, skipping")
+        return
+    end
 
     BuildVirtualList(data.spellIDs)
     injectionActive = true
@@ -210,9 +220,12 @@ function EPS.UI.Inject(sender, profName, data)
         TradeSkillList_Update()
     elseif TradeSkillFrame_Update then
         TradeSkillFrame_Update()
+    else
+        EPS.Debug("Inject: no known update function found")
     end
 
-    EPS.Debug("Injection active for " .. (sender or "?") .. " / " .. (profName or "?"))
+    EPS.Debug(string.format("Inject: done – %d virtual entries for %s/%s",
+        #virtualList, sender or "?", profName or "?"))
 end
 
 -- ---------------------------------------------------------------------------
@@ -236,13 +249,34 @@ end
 -- ---------------------------------------------------------------------------
 function EPS.UI.ShowRemoteProf(sender, profName, data)
     if not data then return end
-    EPS.UI.pendingRemoteView = { sender = sender, profName = profName, data = data }
 
+    -- Keep pendingRemoteView up to date with the latest data so the
+    -- TRADE_SKILL_SHOW timer also gets it if it fires later.
+    if EPS.UI.pendingRemoteView
+        and EPS.UI.pendingRemoteView.sender == sender
+        and EPS.UI.pendingRemoteView.profName == profName then
+        EPS.UI.pendingRemoteView.data = data
+    end
+
+    -- Try immediately; if the frame isn't up yet, poll for up to 3 seconds.
     if TradeSkillFrame and TradeSkillFrame:IsShown() then
         EPS.UI.Inject(sender, profName, data)
+        return
     end
-    -- If frame isn't open yet, injection will happen from TRADE_SKILL_SHOW
-    -- (the handler is in EpochProfShare.lua)
+
+    EPS.Debug("ShowRemoteProf: frame not shown yet, starting retry timer")
+    local elapsed = 0
+    local poller  = CreateFrame("Frame")
+    poller:SetScript("OnUpdate", function(self, dt)
+        elapsed = elapsed + dt
+        if TradeSkillFrame and TradeSkillFrame:IsShown() then
+            self:SetScript("OnUpdate", nil)
+            EPS.UI.Inject(sender, profName, data)
+        elseif elapsed > 3 then
+            self:SetScript("OnUpdate", nil)
+            EPS.Debug("ShowRemoteProf: frame never opened after 3s, giving up")
+        end
+    end)
 end
 
 -- Compatibility stubs so other modules that imported EPS.UI early don't error
