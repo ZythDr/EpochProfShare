@@ -234,12 +234,54 @@ end
 -- ---------------------------------------------------------------------------
 function EPS.UI.ClearInjection()
     if injectionActive then
-        RemoveOverrides()   -- restore natives before clearing state
+        RemoveOverrides()
         injectionActive = false
-        virtualList     = {}
-        addonSpellByVI  = {}
+        virtualList    = {}
+        addonSpellByVI = {}
         EPS.Debug("Injection cleared.")
     end
+end
+
+-- ---------------------------------------------------------------------------
+-- EPS.UI.ForceInject(sender, profName, data)
+-- Used when the TradeSkillFrame never opened on its own (e.g. pfQuest
+-- intercepted the click and showed a tooltip instead).  We open the frame
+-- ourselves, install overrides, and populate it purely from addon data.
+-- ---------------------------------------------------------------------------
+function EPS.UI.ForceInject(sender, profName, data)
+    if not data or not data.spellIDs or #data.spellIDs == 0 then return end
+    if not TradeSkillFrame then
+        EPS.Debug("ForceInject: TradeSkillFrame missing")
+        return
+    end
+
+    -- Build virtual list.  Server sent nothing (frame was never opened
+    -- properly), so _orig_GetNumTradeSkills() returns 0; all entries come
+    -- from the addon payload.
+    BuildVirtualList(data.spellIDs)
+    injectionActive = true
+    InstallOverrides()
+
+    -- Open the frame (bypasses whatever intercepted the original click)
+    if ShowUIPanel then
+        ShowUIPanel(TradeSkillFrame)
+    else
+        TradeSkillFrame:Show()
+    end
+
+    -- Patch the title text so it says the right name
+    if TradeSkillFrameTitleText then
+        TradeSkillFrameTitleText:SetText((sender or "?") .. "'s " .. (profName or "?"))
+    end
+
+    if TradeSkillList_Update then
+        TradeSkillList_Update()
+    elseif TradeSkillFrame_Update then
+        TradeSkillFrame_Update()
+    end
+
+    EPS.Debug(string.format("ForceInject: %d addon-only entries for %s/%s",
+        #virtualList, sender or "?", profName or "?"))
 end
 
 -- ---------------------------------------------------------------------------
@@ -250,21 +292,22 @@ end
 function EPS.UI.ShowRemoteProf(sender, profName, data)
     if not data then return end
 
-    -- Keep pendingRemoteView up to date with the latest data so the
-    -- TRADE_SKILL_SHOW timer also gets it if it fires later.
     if EPS.UI.pendingRemoteView
         and EPS.UI.pendingRemoteView.sender == sender
         and EPS.UI.pendingRemoteView.profName == profName then
         EPS.UI.pendingRemoteView.data = data
     end
 
-    -- Try immediately; if the frame isn't up yet, poll for up to 3 seconds.
     if TradeSkillFrame and TradeSkillFrame:IsShown() then
         EPS.UI.Inject(sender, profName, data)
         return
     end
 
-    EPS.Debug("ShowRemoteProf: frame not shown yet, starting retry timer")
+    -- Frame not open yet.  Poll:
+    --   < 1s  : wait for it to open normally (server response)
+    --   >= 1s : assume another addon (e.g. pfQuest) intercepted the click;
+    --           force-open the frame ourselves with our data.
+    EPS.Debug("ShowRemoteProf: frame not shown, polling")
     local elapsed = 0
     local poller  = CreateFrame("Frame")
     poller:SetScript("OnUpdate", function(self, dt)
@@ -272,9 +315,10 @@ function EPS.UI.ShowRemoteProf(sender, profName, data)
         if TradeSkillFrame and TradeSkillFrame:IsShown() then
             self:SetScript("OnUpdate", nil)
             EPS.UI.Inject(sender, profName, data)
-        elseif elapsed > 3 then
+        elseif elapsed >= 1.0 then
             self:SetScript("OnUpdate", nil)
-            EPS.Debug("ShowRemoteProf: frame never opened after 3s, giving up")
+            EPS.Debug("ShowRemoteProf: frame never opened, using ForceInject")
+            EPS.UI.ForceInject(sender, profName, data)
         end
     end)
 end
