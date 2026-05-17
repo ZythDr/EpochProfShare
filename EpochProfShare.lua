@@ -205,18 +205,33 @@ mainFrame:SetScript("OnEvent", function(self, event, ...)
         -- If we have no pending remote view, this is the player's OWN profession.
         -- Scan and save it, then return – no injection should happen.
         if not EPS.UI.pendingRemoteView then
+            -- Remove any stale overrides from a previous injection so the
+            -- scanner reads the real server data, not the virtualList.
+            EPS.UI.ClearInjection()
+
             if EPS_SavedVars and EPS_SavedVars.settings and EPS_SavedVars.settings.autoScan then
-                local result = EPS.Scanner.ScanCurrentProfession()
-                if result then
-                    EPS_SavedVars.localProfs[result.profName:lower()] = {
-                        profName  = result.profName,
-                        rank      = result.rank,
-                        maxRank   = result.maxRank,
-                        spellIDs  = result.spellIDs,
-                        scannedAt = time(),
-                    }
-                    EPS.Debug("Scanned " .. result.profName .. " – " .. #result.spellIDs .. " recipes")
-                end
+                -- Delay 0.5s: gives the server time to finish sending all
+                -- recipe rows before we capture them.
+                local scanTimer = CreateFrame("Frame")
+                local scanT = 0
+                scanTimer:SetScript("OnUpdate", function(self, elapsed)
+                    scanT = scanT + elapsed
+                    if scanT >= 0.5 then
+                        self:SetScript("OnUpdate", nil)
+                        local result = EPS.Scanner.ScanCurrentProfession()
+                        if result then
+                            EPS_SavedVars.localProfs[result.profName:lower()] = {
+                                profName  = result.profName,
+                                rank      = result.rank,
+                                maxRank   = result.maxRank,
+                                spellIDs  = result.spellIDs,
+                                scannedAt = time(),
+                            }
+                            EPS.Debug("Scanned " .. result.profName ..
+                                " – " .. #result.spellIDs .. " recipes")
+                        end
+                    end
+                end)
             end
             return   -- never inject into own-profession window
         end

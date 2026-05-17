@@ -27,6 +27,14 @@ local function SpellIDFromLink(link)
     return nil
 end
 
+-- Capture the real C functions once at load time.
+-- UI.lua may later replace the globals temporarily during injection;
+-- using these locals guarantees the scanner always reads real server data.
+local _GetNumTradeSkills     = GetNumTradeSkills
+local _GetTradeSkillLine     = GetTradeSkillLine
+local _GetTradeSkillInfo     = GetTradeSkillInfo
+local _GetTradeSkillRecipeLink = GetTradeSkillRecipeLink
+
 -- ---------------------------------------------------------------------------
 -- EPS.Scanner
 -- ---------------------------------------------------------------------------
@@ -35,18 +43,18 @@ EPS.Scanner = {}
 ---Scan the currently open profession window.
 ---Returns { profName, rank, maxRank, spellIDs } or nil.
 function EPS.Scanner.ScanCurrentProfession()
-    local numSkills = GetNumTradeSkills()
+    local numSkills = _GetNumTradeSkills()
     if not numSkills or numSkills == 0 then return nil end
 
-    local profName, _, rank, _, maxRank = GetTradeSkillLine()
+    local profName, _, rank, _, maxRank = _GetTradeSkillLine()
     if not profName or profName == "UNKNOWN" then return nil end
 
     local spellIDs = {}
     for i = 1, numSkills do
-        local skillName, skillType = GetTradeSkillInfo(i)
+        local skillName, skillType = _GetTradeSkillInfo(i)
         -- "header" entries are category separators, not recipes
         if skillName and skillType ~= "header" then
-            local id = SpellIDFromLink(GetTradeSkillRecipeLink(i))
+            local id = SpellIDFromLink(_GetTradeSkillRecipeLink(i))
             if id and id > 0 then
                 spellIDs[#spellIDs + 1] = id
             end
