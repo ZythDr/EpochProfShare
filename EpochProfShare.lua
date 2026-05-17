@@ -90,10 +90,13 @@ SetItemRef = function(link, text, button, chatFrame)
             end
         end
 
-        -- Own trade link: let native handler try first.
-        -- If the server doesn't open TradeSkillFrame within 0.5s (Project
-        -- Epoch bug for primary professions), cast the profession spell
-        -- directly to open our own window.
+        -- Own trade link: let native handler try, then immediately also
+        -- cast the profession spell directly (protected call is allowed here
+        -- because SetItemRef runs inside a hardware/click event context).
+        -- For FA/Cooking the native handler works; CastSpellByName just
+        -- reopens the same window harmlessly.  For LW/primary professions
+        -- (Project Epoch bug: server shows tooltip instead of frame),
+        -- CastSpellByName is what actually opens the window.
         local myName = UnitName("player")
         if sender and myName and sender:lower() == myName:lower() then
             EPS.Debug("Own trade link – native first")
@@ -102,21 +105,12 @@ SetItemRef = function(link, text, button, chatFrame)
             local ownProfName = (text or ""):match("%[(.-)%]") or ""
             ownProfName = ownProfName:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""):gsub("|h", "")
             if ownProfName ~= "" then
-                local ownT = 0
-                local ownF = CreateFrame("Frame")
-                ownF:SetScript("OnUpdate", function(self, elapsed)
-                    ownT = ownT + elapsed
-                    if TradeSkillFrame and TradeSkillFrame:IsShown() then
-                        self:SetScript("OnUpdate", nil)  -- native worked, done
-                    elseif ownT >= 0.5 then
-                        self:SetScript("OnUpdate", nil)
-                        EPS.Debug("Own trade link: frame not open after 0.5s, casting " .. ownProfName)
-                        CastSpellByName(ownProfName)
-                    end
-                end)
+                EPS.Debug("Own trade link: casting " .. ownProfName)
+                CastSpellByName(ownProfName)
             end
             return
         end
+
 
 
         if sender and sender ~= "" then
