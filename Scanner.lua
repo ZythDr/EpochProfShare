@@ -41,7 +41,7 @@ local _GetTradeSkillRecipeLink = GetTradeSkillRecipeLink
 EPS.Scanner = {}
 
 ---Scan the currently open profession window.
----Returns { profName, rank, maxRank, spellIDs } or nil.
+---Returns { profName, rank, maxRank, spellIDs, entries } or nil.
 function EPS.Scanner.ScanCurrentProfession()
     local numSkills = _GetNumTradeSkills()
     if not numSkills or numSkills == 0 then return nil end
@@ -49,13 +49,17 @@ function EPS.Scanner.ScanCurrentProfession()
     local profName, _, rank, _, maxRank = _GetTradeSkillLine()
     if not profName or profName == "UNKNOWN" then return nil end
 
-    local spellIDs = {}
+    local spellIDs = {}   -- sorted, for hashing / SAME detection
+    local entries  = {}   -- ordered {type="h"|"s", name/id}, preserves categories
+
     for i = 1, numSkills do
         local skillName, skillType = _GetTradeSkillInfo(i)
-        -- "header" entries are category separators, not recipes
-        if skillName and skillType ~= "header" then
+        if skillType == "header" then
+            entries[#entries + 1] = { type = "h", name = skillName or "Unknown" }
+        elseif skillName then
             local id = SpellIDFromLink(_GetTradeSkillRecipeLink(i))
             if id and id > 0 then
+                entries[#entries + 1]  = { type = "s", id = id }
                 spellIDs[#spellIDs + 1] = id
             end
         end
@@ -70,6 +74,7 @@ function EPS.Scanner.ScanCurrentProfession()
         rank     = rank    or 0,
         maxRank  = maxRank or 0,
         spellIDs = spellIDs,
+        entries  = entries,
     }
 end
 

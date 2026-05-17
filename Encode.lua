@@ -117,12 +117,73 @@ local function ChunkPayload(payload, chunkSize)
 end
 
 -- ---------------------------------------------------------------------------
+-- EPS.Encode.EncodeEntries(entries) → string   (bd2 format)
+-- entries = { {type="h", name="…"}, {type="s", id=N}, … }
+-- Headers are encoded as  !SafeName  (spaces→_).
+-- Spell ID deltas reset to 0 after each header so all deltas are positive.
+-- Tokens are separated by "." (same as bd1 so ChunkPayload still works).
+-- ---------------------------------------------------------------------------
+local function EncodeEntries(entries)
+    if not entries or #entries == 0 then return "" end
+    local parts = {}
+    local prev  = 0
+    for _, e in ipairs(entries) do
+        if e.type == "h" then
+            -- Encode header: replace . and space (reserved chars) with _
+            local safe = (e.name or "unknown"):gsub("[%. ]", "_")
+            parts[#parts + 1] = "!" .. safe
+            prev = 0   -- reset delta base for new category
+        elseif e.type == "s" then
+            local delta = e.id - prev
+            if delta > 0 then
+                parts[#parts + 1] = ToBase36(delta)
+                prev = e.id
+            end
+        end
+    end
+    return table.concat(parts, ".")
+end
+
+-- ---------------------------------------------------------------------------
+-- EPS.Encode.DecodeEntries(payload) → entries, spellIDs
+-- Inverse of EncodeEntries.  Also returns a sorted spellIDs array for
+-- hash verification.
+-- ---------------------------------------------------------------------------
+local function DecodeEntries(payload)
+    local entries  = {}
+    local spellIDs = {}
+    if not payload or payload == "" then return entries, spellIDs end
+
+    local prev = 0
+    for token in (payload .. "."):gmatch("([^%.]+)%.") do
+        if token:sub(1, 1) == "!" then
+            -- Header token
+            local name = token:sub(2):gsub("_", " ")
+            entries[#entries + 1] = { type = "h", name = name }
+            prev = 0
+        else
+            local delta = FromBase36(token)
+            if delta and delta > 0 then
+                local id = prev + delta
+                entries[#entries + 1] = { type = "s", id = id }
+                spellIDs[#spellIDs + 1] = id
+                prev = id
+            end
+        end
+    end
+    table.sort(spellIDs)
+    return entries, spellIDs
+end
+
+-- ---------------------------------------------------------------------------
 -- Public API
 -- ---------------------------------------------------------------------------
 EPS.Encode = {
-    ToBase36     = ToBase36,
-    FromBase36   = FromBase36,
-    CompressIDs  = CompressIDs,
+    ToBase36      = ToBase36,
+    FromBase36    = FromBase36,
+    CompressIDs   = CompressIDs,
     DecompressIDs = DecompressIDs,
-    ChunkPayload = ChunkPayload,
+    EncodeEntries = EncodeEntries,
+    DecodeEntries = DecodeEntries,
+    ChunkPayload  = ChunkPayload,
 }

@@ -140,17 +140,24 @@ local function HandleREQ(sender, reqId, profName, knownHash)
     end
 
     -- Encode and chunk
-    local encoded    = EPS.Encode.CompressIDs(saved.spellIDs)
+    local encoding, encoded
+    if saved.entries and #saved.entries > 0 then
+        encoding = "bd2"
+        encoded  = EPS.Encode.EncodeEntries(saved.entries)
+    else
+        encoding = "bd1"
+        encoded  = EPS.Encode.CompressIDs(saved.spellIDs)
+    end
     local chunks     = EPS.Encode.ChunkPayload(encoded, MAX_CHUNK_PAYLOAD)
     local chunkCount = #chunks
 
     -- Start packet
-    local startMsg = string.format("EPS:S:%s:%s:%d:%d:bd1:%d:%s",
-        reqId, profName, saved.rank or 0, saved.maxRank or 0, chunkCount, currentHash)
+    local startMsg = string.format("EPS:S:%s:%s:%d:%d:%s:%d:%s",
+        reqId, profName, saved.rank or 0, saved.maxRank or 0, encoding, chunkCount, currentHash)
     SendToPlayer(sender, startMsg)
-    Dbg("Sent S to " .. sender .. " – " .. chunkCount .. " chunks")
+    Dbg("Sent S to " .. sender .. " – " .. chunkCount .. " chunks (" .. encoding .. ")")
 
-    -- Data chunks  (small inter-chunk delay to avoid flooding)
+    -- Data chunks
     for i, chunk in ipairs(chunks) do
         local dataMsg = string.format("EPS:D:%s:%d:%s", reqId, i, chunk)
         SendToPlayer(sender, dataMsg)
@@ -165,7 +172,7 @@ end
 -- Internal: Handle S (Start) packet – we are the receiver
 -- ---------------------------------------------------------------------------
 local function HandleS(sender, reqId, profName, rank, maxRank, encoding, chunkCount, hash)
-    if encoding ~= "bd1" then
+    if encoding ~= "bd1" and encoding ~= "bd2" then
         Dbg("Unknown encoding '" .. (encoding or "?") .. "' from " .. sender)
         return
     end
@@ -178,13 +185,14 @@ local function HandleS(sender, reqId, profName, rank, maxRank, encoding, chunkCo
         profName   = profName,
         rank       = tonumber(rank)       or 0,
         maxRank    = tonumber(maxRank)    or 0,
+        encoding   = encoding,
         chunkCount = tonumber(chunkCount) or 0,
         hash       = hash,
         chunks     = {},
         startT     = GetTime(),
     }
     Dbg("Transfer " .. reqId .. " started from " .. sender ..
-        " – " .. (chunkCount or "?") .. " chunks for " .. profName)
+        " – " .. (chunkCount or "?") .. " chunks for " .. profName .. " (" .. encoding .. ")")
 end
 
 -- ---------------------------------------------------------------------------
@@ -223,9 +231,18 @@ local function HandleE(sender, reqId)
     end
 
     -- Reassemble
-    local full    = table.concat(state.chunks)
-    local ids     = EPS.Encode.DecompressIDs(full)
-    local hash    = EPS.Scanner.BuildHash(ids)
+    local full = table.concat(state.chunks)
+    local ids, entries
+
+    if state.encoding == "bd2" then
+        local decoded
+        decoded, ids = EPS.Encode.DecodeEntries(full)
+        entries = decoded
+    else
+        ids = EPS.Encode.DecompressIDs(full)
+    end
+
+    local hash = EPS.Scanner.BuildHash(ids)
 
     -- Validate hash
     if state.hash ~= "" and hash ~= state.hash then
@@ -239,6 +256,7 @@ local function HandleE(sender, reqId)
     -- Store in cache
     EPS.Cache.StoreRemoteProf(state.sender, state.profName, {
         spellIDs = ids,
+        entries  = entries,
         rank     = state.rank,
         maxRank  = state.maxRank,
         hash     = hash,
