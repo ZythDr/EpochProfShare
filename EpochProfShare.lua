@@ -116,6 +116,24 @@ SetItemRef = function(link, text, button, chatFrame)
                 if EPS.Comm and EPS.Comm.Request then
                     EPS.Comm.Request(sender, profName)
                 end
+
+                -- Safety: if TradeSkillFrame never opens (server bug), clear
+                -- pendingRemoteView after 15s so the next own-profession open
+                -- isn't mistaken for a remote view.
+                local clearTimer = CreateFrame("Frame")
+                local clearT = 0
+                clearTimer:SetScript("OnUpdate", function(self, elapsed)
+                    clearT = clearT + elapsed
+                    if clearT >= 15 then
+                        self:SetScript("OnUpdate", nil)
+                        if EPS.UI.pendingRemoteView
+                            and EPS.UI.pendingRemoteView.sender == sender
+                            and EPS.UI.pendingRemoteView.profName == profName then
+                            EPS.UI.pendingRemoteView = nil
+                            EPS.Debug("pendingRemoteView auto-expired (frame never opened)")
+                        end
+                    end
+                end)
             end
         else
             EPS.Debug("Trade link clicked but sender unknown – native fallback")
@@ -178,13 +196,10 @@ mainFrame:SetScript("OnEvent", function(self, event, ...)
 
     -- -----------------------------------------------------------------------
     elseif event == "TRADE_SKILL_SHOW" then
-        local myName = UnitName("player")
-
-        -- ---- SENDER side: scan our own profession and save it ----
-        if EPS_SavedVars and EPS_SavedVars.settings and EPS_SavedVars.settings.autoScan then
-            -- Only scan when viewing our OWN profession window.
-            -- When viewing a remote profession, pendingRemoteView will be set.
-            if not EPS.UI.pendingRemoteView then
+        -- If we have no pending remote view, this is the player's OWN profession.
+        -- Scan and save it, then return – no injection should happen.
+        if not EPS.UI.pendingRemoteView then
+            if EPS_SavedVars and EPS_SavedVars.settings and EPS_SavedVars.settings.autoScan then
                 local result = EPS.Scanner.ScanCurrentProfession()
                 if result then
                     EPS_SavedVars.localProfs[result.profName:lower()] = {
@@ -194,33 +209,27 @@ mainFrame:SetScript("OnEvent", function(self, event, ...)
                         spellIDs  = result.spellIDs,
                         scannedAt = time(),
                     }
-                    EPS.Debug("Scanned " .. result.profName ..
-                        " – " .. #result.spellIDs .. " recipes")
+                    EPS.Debug("Scanned " .. result.profName .. " – " .. #result.spellIDs .. " recipes")
                 end
-                return
             end
+            return   -- never inject into own-profession window
         end
 
-        -- ---- RECEIVER side: inject remote data if already cached ----
+        -- Remote view: inject cached data (if available) once the frame has drawn.
         local pv = EPS.UI.pendingRemoteView
-        if pv then
-            local cached = EPS.Cache.GetRemoteProf(pv.sender, pv.profName)
-            if cached then
-                -- Small yield so the native frame finishes drawing first
-                local f = CreateFrame("Frame")
-                local t = 0
-                f:SetScript("OnUpdate", function(self, elapsed)
-                    t = t + elapsed
-                    if t >= 0.1 then
-                        self:SetScript("OnUpdate", nil)
-                        if TradeSkillFrame and TradeSkillFrame:IsShown() then
-                            EPS.UI.Inject(pv.sender, pv.profName, cached)
-                        end
-                    end
-                end)
-            end
-            -- If not cached, we wait for Comm to deliver data → ShowRemoteProf
+        local cached = EPS.Cache.GetRemoteProf(pv.sender, pv.profName)
+        if cached then
+            local f = CreateFrame("Frame")
+            local t = 0
+            f:SetScript("OnUpdate", function(self, elapsed)
+                t = t + elapsed
+                if t >= 0.15 then
+                    self:SetScript("OnUpdate", nil)
+                    EPS.UI.Inject(pv.sender, pv.profName, cached)
+                end
+            end)
         end
+        -- No cached data: wait for Comm → ShowRemoteProf to call Inject
 
     -- -----------------------------------------------------------------------
     elseif event == "TRADE_SKILL_CLOSE" then

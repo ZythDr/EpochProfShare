@@ -184,8 +184,8 @@ local function RemoveOverrides()
     GetTradeSkillReagentInfo = _orig_GetTradeSkillReagentInfo
 end
 
--- Install overrides permanently (they self-disable when injectionActive=false)
-InstallOverrides()
+-- Overrides are installed dynamically inside Inject() and removed in ClearInjection().
+-- Do NOT call InstallOverrides() here at load time.
 
 -- ---------------------------------------------------------------------------
 -- EPS.UI.Inject(sender, profName, data)
@@ -194,23 +194,22 @@ InstallOverrides()
 -- ---------------------------------------------------------------------------
 function EPS.UI.Inject(sender, profName, data)
     if not data or not data.spellIDs or #data.spellIDs == 0 then return end
+    if not TradeSkillFrame or not TradeSkillFrame:IsShown() then return end
 
     BuildVirtualList(data.spellIDs)
     injectionActive = true
+    InstallOverrides()   -- only active while frame is open with remote data
 
-    -- Update the skill rank label if we have better data than the server sent
-    -- (TradeSkillFrameSkillRankText etc. are native frame elements)
+    -- Update the skill rank label if we have better info than the server sent
     if data.rank and data.maxRank and TradeSkillFrameSkillRankText then
         TradeSkillFrameSkillRankText:SetText(data.rank .. " / " .. data.maxRank)
     end
 
-    -- Refresh the native list (calls our overridden GetNumTradeSkills etc.)
-    if TradeSkillFrame and TradeSkillFrame:IsShown() then
-        if TradeSkillList_Update then
-            TradeSkillList_Update()
-        elseif TradeSkillFrame_Update then
-            TradeSkillFrame_Update()
-        end
+    -- Refresh the native list (our overrides are now in place)
+    if TradeSkillList_Update then
+        TradeSkillList_Update()
+    elseif TradeSkillFrame_Update then
+        TradeSkillFrame_Update()
     end
 
     EPS.Debug("Injection active for " .. (sender or "?") .. " / " .. (profName or "?"))
@@ -221,11 +220,13 @@ end
 -- Restore clean state when the trade skill window closes.
 -- ---------------------------------------------------------------------------
 function EPS.UI.ClearInjection()
-    if not injectionActive then return end
-    injectionActive = false
-    virtualList     = {}
-    addonSpellByVI  = {}
-    EPS.Debug("Injection cleared.")
+    if injectionActive then
+        RemoveOverrides()   -- restore natives before clearing state
+        injectionActive = false
+        virtualList     = {}
+        addonSpellByVI  = {}
+        EPS.Debug("Injection cleared.")
+    end
 end
 
 -- ---------------------------------------------------------------------------
