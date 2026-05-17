@@ -109,10 +109,7 @@ function EPS.Comm.Request(target, profName)
     SendToPlayer(target, msg)
 
     activeRequests[key] = reqId
-    -- Clean up the active-request lock after the timeout window
-    C_Timer and C_Timer.After and C_Timer.After(REQUEST_TIMEOUT + 5, function()
-        if activeRequests[key] == reqId then activeRequests[key] = nil end
-    end)
+    -- Lock is cleared in HandleE / HandleSAME / HandleERR, and by PruneTimedOut()
 
     return reqId
 end

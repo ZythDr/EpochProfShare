@@ -82,10 +82,10 @@ SetItemRef = function(link, text, button, chatFrame)
             end
         end
 
-        -- Fallback: look in the chat-sender cache using the full hyperlink
+        -- Fallback: the link string itself IS the cache key (stored when we saw
+        -- it in a CHAT_MSG_* event).  Don't reconstruct |H...|h; just use `link`.
         if not sender then
-            local fullLink = "|H" .. link .. "|h" .. (text or "") .. "|h"
-            sender = EPS.Cache.GetLinkSender(fullLink)
+            sender = EPS.Cache.GetLinkSender(link)
             if sender then
                 EPS.Debug("Cache fallback: sender=" .. sender)
             end
@@ -113,7 +113,9 @@ SetItemRef = function(link, text, button, chatFrame)
                 end
 
                 -- Always request (sender replies SAME if nothing changed)
-                EPS.Comm.Request(sender, profName)
+                if EPS.Comm and EPS.Comm.Request then
+                    EPS.Comm.Request(sender, profName)
+                end
             end
         else
             EPS.Debug("Trade link clicked but sender unknown – native fallback")
@@ -128,7 +130,10 @@ end
 -- ---------------------------------------------------------------------------
 local mainFrame = CreateFrame("Frame", "EPSMainFrame", UIParent)
 
-RegisterAddonMessagePrefix("EpsProfShare")
+-- RegisterAddonMessagePrefix was not available on all 3.3.5 private servers
+if RegisterAddonMessagePrefix then
+    RegisterAddonMessagePrefix("EpsProfShare")
+end
 
 mainFrame:RegisterEvent("ADDON_LOADED")
 mainFrame:RegisterEvent("TRADE_SKILL_SHOW")
