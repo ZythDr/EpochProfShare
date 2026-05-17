@@ -267,8 +267,6 @@ end
 local function HandleSAME(sender, reqId, hash)
     Dbg("SAME from " .. sender .. " (hash=" .. hash .. ")")
 
-    -- Find which profession this reqId was for
-    -- We stored it in activeRequests with "sender/profName"
     local profName
     for k, v in pairs(activeRequests) do
         if v == reqId then
@@ -277,16 +275,20 @@ local function HandleSAME(sender, reqId, hash)
             break
         end
     end
-    if not profName then return end
+    if not profName then
+        Dbg("SAME: could not find profName for reqId=" .. reqId .. " (request may have expired)")
+        return
+    end
 
+    Dbg("SAME: profName=" .. profName .. ", looking up cache for " .. sender)
     local cached = EPS.Cache.GetRemoteProf(sender, profName)
     if cached then
-        Dbg("Using cached data for " .. sender .. "/" .. profName)
+        Dbg("SAME: cache hit (" .. #cached.spellIDs .. " spells), calling ShowRemoteProf")
         if EPS.UI and EPS.UI.ShowRemoteProf then
             EPS.UI.ShowRemoteProf(sender, profName, cached)
         end
     else
-        Dbg("SAME but no cache for " .. sender .. "/" .. profName)
+        Dbg("SAME: NO cache for " .. sender .. "/" .. profName .. " – need full transfer")
     end
 end
 
