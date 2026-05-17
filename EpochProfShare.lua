@@ -314,6 +314,32 @@ SlashCmdList["EPOCHPROFSHARE"] = function(input)
             DEFAULT_CHAT_FRAME:AddMessage("|cff9b59b6EPS:|r No profession window open.")
         end
 
+    elseif cmd == "test" then
+        -- /eps test [profName]  –  simulates what a remote viewer sees for YOUR
+        -- own saved scan.  Open your own profession window first, then run this.
+        local profArg = (input or ""):match("^%s*%S+%s+(.+)$") or ""
+        if profArg == "" then
+            -- Try to detect open window
+            local profName = select(1, GetTradeSkillLine and GetTradeSkillLine() or "")
+            profArg = profName or ""
+        end
+        if profArg == "" then
+            DEFAULT_CHAT_FRAME:AddMessage("|cff9b59b6EPS:|r Usage: /eps test <ProfessionName>")
+        else
+            local saved = EPS_SavedVars.localProfs and EPS_SavedVars.localProfs[profArg:lower()]
+            if not saved then
+                DEFAULT_CHAT_FRAME:AddMessage(string.format(
+                    "|cff9b59b6EPS:|r No saved scan for '%s'. Open your profession window first.", profArg))
+            else
+                local myName = UnitName("player") or "You"
+                DEFAULT_CHAT_FRAME:AddMessage(string.format(
+                    "|cff9b59b6EPS:|r Simulating remote view of %s (%d recipes)...",
+                    saved.profName, #saved.spellIDs))
+                EPS.UI.pendingRemoteView = { sender = myName, profName = saved.profName }
+                EPS.UI.ForceInject(myName, saved.profName, saved)
+            end
+        end
+
     elseif cmd == "profs" then
         local count = 0
         for _, v in pairs(EPS_SavedVars.localProfs or {}) do

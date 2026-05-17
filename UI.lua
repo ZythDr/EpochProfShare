@@ -36,10 +36,17 @@ local _orig_GetTradeSkillReagentInfo = GetTradeSkillReagentInfo
 -- ---------------------------------------------------------------------------
 local injectionActive = false
 
--- virtualList[i] = { type="server"|"addon", serverIdx=n|nil, spellID=n|nil,
---                    name=string, skillType=string }
+-- virtualList[i] = { type="server"|"addon"|"header", serverIdx=n|nil,
+--                    spellID=n|nil, name=string, skillType=string }
 local virtualList    = {}
 local addonSpellByVI = {}   -- [virtualIndex] = spellID  (addon entries only)
+
+-- filteredList is a subset of virtualList matching the current search text.
+-- It is lazily rebuilt whenever filteredDirty is true.
+local filteredList  = {}
+local filteredDirty = false
+local filteredText  = ""
+
 
 EPS.UI = EPS.UI or {}
 EPS.UI.pendingRemoteView = nil   -- { sender=str, profName=str }  set by SetItemRef hook
@@ -88,28 +95,71 @@ local function BuildVirtualList(addonSpellIDs)
         end
     end
 
+    filteredList    = virtualList   -- start unfiltered
+    filteredDirty   = false
+    filteredText    = ""
+
     EPS.Debug(string.format("Injection: %d server + %d addon-only = %d total",
         serverCount, #virtualList - serverCount, #virtualList))
+end
+
+-- Rebuild filteredList from virtualList based on current search text.
+local function RebuildFilter()
+    local box  = TradeSkillFilterBox
+    local text = (box and box:GetText()) or ""
+    if text == (SEARCH or "Search") then text = "" end  -- placeholder
+    filteredText  = text
+    filteredDirty = false
+    if text == "" then
+        filteredList = virtualList
+        return
+    end
+    local lower = text:lower()
+    local out   = {}
+    for _, e in ipairs(virtualList) do
+        -- Always keep headers; skip recipe entries that don't match.
+        if e.type == "header" or (e.name or ""):lower():find(lower, 1, true) then
+            out[#out + 1] = e
+        end
+    end
+    filteredList = out
+end
+
+-- Return the active (possibly filtered) list, rebuilding if dirty.
+local function ActiveList()
+    if filteredDirty then RebuildFilter() end
+    return filteredList
 end
 
 -- ---------------------------------------------------------------------------
 -- Override installation
 -- ---------------------------------------------------------------------------
 local function InstallOverrides()
+    filteredDirty = false
+    filteredText  = ""
+    filteredList  = virtualList
+
+    -- Invalidate filter cache whenever the search box text changes
+    if TradeSkillFilterBox then
+        _savedFilterBoxScript = TradeSkillFilterBox:GetScript("OnTextChanged")
+        TradeSkillFilterBox:SetScript("OnTextChanged", function(self, userInput)
+            filteredDirty = true
+            if _savedFilterBoxScript then _savedFilterBoxScript(self, userInput) end
+        end)
+    end
+
     GetNumTradeSkills = function()
-        if injectionActive then return #virtualList end
+        if injectionActive then return #ActiveList() end
         return _orig_GetNumTradeSkills()
     end
 
     GetTradeSkillInfo = function(index)
         if injectionActive then
-            local e = virtualList[index]
+            local e = ActiveList()[index]
             if not e then return _orig_GetTradeSkillInfo(index) end
             if e.type == "server" then
                 return _orig_GetTradeSkillInfo(e.serverIdx)
             else
-                -- Remote recipe: name from client spell DB, no difficulty color,
-                -- numAvailable=0, isExpanded=false
                 return e.name, e.skillType, 0, false, 0
             end
         end
@@ -118,7 +168,7 @@ local function InstallOverrides()
 
     GetTradeSkillRecipeLink = function(index)
         if injectionActive then
-            local e = virtualList[index]
+            local e = ActiveList()[index]
             if not e then return _orig_GetTradeSkillRecipeLink(index) end
             if e.type == "server" then
                 return _orig_GetTradeSkillRecipeLink(e.serverIdx)
@@ -147,7 +197,7 @@ local function InstallOverrides()
     -- doesn't try to iterate reagents with an out-of-range server index
     GetTradeSkillNumReagents = function(index)
         if injectionActive then
-            local e = virtualList[index]
+            local e = ActiveList()[index]
             if not e then return _orig_GetTradeSkillNumReagents(index) end
             if e.type == "server" then
                 return _orig_GetTradeSkillNumReagents(e.serverIdx)
@@ -172,9 +222,8 @@ local function InstallOverrides()
     end
 end
 
--- ---------------------------------------------------------------------------
--- Override removal
--- ---------------------------------------------------------------------------
+local _savedFilterBoxScript = nil
+
 local function RemoveOverrides()
     GetNumTradeSkills        = _orig_GetNumTradeSkills
     GetTradeSkillInfo        = _orig_GetTradeSkillInfo
@@ -182,6 +231,11 @@ local function RemoveOverrides()
     GetTradeSkillItemLink    = _orig_GetTradeSkillItemLink
     GetTradeSkillNumReagents = _orig_GetTradeSkillNumReagents
     GetTradeSkillReagentInfo = _orig_GetTradeSkillReagentInfo
+    -- Restore the original filter box script
+    if TradeSkillFilterBox and _savedFilterBoxScript ~= nil then
+        TradeSkillFilterBox:SetScript("OnTextChanged", _savedFilterBoxScript)
+        _savedFilterBoxScript = nil
+    end
 end
 
 -- Overrides are installed dynamically inside Inject() and removed in ClearInjection().
