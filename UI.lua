@@ -377,7 +377,10 @@ end
 function EPS.UI.ForceInject(sender, profName, data)
     if not data or not data.spellIDs or #data.spellIDs == 0 then return end
     if not TradeSkillFrame then
-        EPS.Debug("ForceInject: TradeSkillFrame missing")
+        LoadAddOn("Blizzard_TradeSkillUI")
+    end
+    if not TradeSkillFrame then
+        EPS.Debug("ForceInject: TradeSkillFrame missing even after LoadAddOn")
         return
     end
 
