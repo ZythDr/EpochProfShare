@@ -90,12 +90,34 @@ SetItemRef = function(link, text, button, chatFrame)
             end
         end
 
-        -- Own trade link: skip all addon logic completely, let native handle it
+        -- Own trade link: let native handler try first.
+        -- If the server doesn't open TradeSkillFrame within 0.5s (Project
+        -- Epoch bug for primary professions), cast the profession spell
+        -- directly to open our own window.
         local myName = UnitName("player")
         if sender and myName and sender:lower() == myName:lower() then
-            EPS.Debug("Own trade link – skipping addon logic")
-            return _OrigSetItemRef(link, text, button, chatFrame)
+            EPS.Debug("Own trade link – native first")
+            _OrigSetItemRef(link, text, button, chatFrame)
+
+            local ownProfName = (text or ""):match("%[(.-)%]") or ""
+            ownProfName = ownProfName:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""):gsub("|h", "")
+            if ownProfName ~= "" then
+                local ownT = 0
+                local ownF = CreateFrame("Frame")
+                ownF:SetScript("OnUpdate", function(self, elapsed)
+                    ownT = ownT + elapsed
+                    if TradeSkillFrame and TradeSkillFrame:IsShown() then
+                        self:SetScript("OnUpdate", nil)  -- native worked, done
+                    elseif ownT >= 0.5 then
+                        self:SetScript("OnUpdate", nil)
+                        EPS.Debug("Own trade link: frame not open after 0.5s, casting " .. ownProfName)
+                        CastSpellByName(ownProfName)
+                    end
+                end)
+            end
+            return
         end
+
 
         if sender and sender ~= "" then
             -- Extract profession name from the link text, e.g. "[Enchanting]"
